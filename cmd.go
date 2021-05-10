@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"math/rand"
 	"mime/multipart"
 	"net/http"
@@ -18,6 +19,7 @@ import (
 type TrackUpload interface {
 	ContentType() string
 	FileName() string
+	MD5() string
 	Reader() (io.ReadCloser, error)
 }
 
@@ -131,7 +133,7 @@ func (c *Client) CreatePlaylist(title string) (*Playlist, error) {
 }
 
 func (c *Client) PlayPlaylist(id string, idx int) (*Audio, error) {
-	msg := &PlaylistPlay{ID: id, TrackIndex: idx}
+	msg := &PlaylistPlay{ID: id, TrackIndex: idx + 1}
 	f := func(state *JookiState) bool {
 		if state == nil || state.Audio == nil {
 			return false
@@ -211,39 +213,119 @@ func (c *Client) UpdatePlaylistToken(id, token string) (*Playlist, error) {
 	return c.UpdatePlaylist(msg)
 }
 
-func (c *Client) UploadToPlaylist(id string, track TrackUpload) (*Track, error) {
-	uploadId := rand.Int()
+type ProgressBody struct {
+	buf *bytes.Buffer
+	size *int
+	pos int
+	Progress chan float64
+	finished bool
+}
+
+func NewProgressBody() *ProgressBody {
+	return &ProgressBody{
+		buf: bytes.NewBuffer([]byte{}),
+		pos: 0,
+		Progress: make(chan float64, 1024),
+		finished: false,
+	}
+}
+
+func (pb *ProgressBody) Write(data []byte) (int, error) {
+	return pb.buf.Write(data)
+}
+
+func (pb *ProgressBody) Read(dst []byte) (int, error) {
+	if pb.size == nil {
+		s := pb.buf.Len()
+		pb.size = &s
+	}
+	n, err := pb.buf.Read(dst)
+	pb.pos += n
+	if !pb.finished {
+		pb.Progress <- pb.UploadProgress()
+		if n == 0 || err == io.EOF {
+			pb.finished = true
+			close(pb.Progress)
+		}
+	}
+	return n, err
+}
+
+func (pb *ProgressBody) UploadProgress() float64 {
+	return float64(pb.pos) / float64(*pb.size)
+}
+
+func (pb *ProgressBody) Len() int {
+	if pb.size == nil {
+		return pb.buf.Len()
+	}
+	return *pb.size
+}
+
+type ProgressUpdate struct {
+	FileName string
+	UploadID int
+	UploadProgress float64
+	Track *Track
+	Err error
+}
+
+func (c *Client) UploadToPlaylist(id string, track TrackUpload, ch chan ProgressUpdate) (*Track, error) {
+	defer close(ch)
+	md5 := track.MD5()[:16]
+	c.hc.CloseIdleConnections()
+	uploadId := int(rand.Intn(1e7))
+	progUpdate := ProgressUpdate{FileName: track.FileName(), UploadID: uploadId}
+	ch <- progUpdate
 	u := &url.URL{
 		Scheme: "http",
 		Host: c.device.Hostname,
 		Path: "/upload",
 	}
-	body := &bytes.Buffer{}
+	body := NewProgressBody()
+	go func() {
+		for {
+			prog, ok := <-body.Progress
+			if !ok {
+				break
+			}
+			progUpdate.UploadProgress = prog
+			ch <- progUpdate
+		}
+	}()
 	w := multipart.NewWriter(body)
 	h := textproto.MIMEHeader{}
 	h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%d"; filename="%s"`, uploadId, filepath.Base(track.FileName())))
 	h.Set("Content-Type", track.ContentType())
 	part, err := w.CreatePart(h)
 	if err != nil {
+		progUpdate.Err = err
+		ch <- progUpdate
 		return nil, err
 	}
 	r, err := track.Reader()
 	if err != nil {
+		progUpdate.Err = err
+		ch <- progUpdate
 		return nil, err
 	}
 	defer r.Close()
 	size, err := io.Copy(part, r)
 	if err != nil {
+		progUpdate.Err = err
+		ch <- progUpdate
 		return nil, err
 	}
 	w.Close()
 
 	req, err := http.NewRequest(http.MethodPost, u.String(), body)
 	if err != nil {
+		progUpdate.Err = err
+		ch <- progUpdate
 		return nil, err
 	}
+	req.ContentLength = int64(body.Len())
 	req.Header.Set("Content-Type", w.FormDataContentType())
-	hc := &http.Client{}
 
 	prevTracks := map[string]*Track{}
 	state := c.GetState()
@@ -251,13 +333,20 @@ func (c *Client) UploadToPlaylist(id string, track TrackUpload) (*Track, error) 
 		prevTracks = state.Library.Tracks
 	}
 
-	res, err := hc.Do(req)
+	res, err := c.hc.Do(req)
 	if err != nil {
+		log.Printf("error uploading %d: %s", uploadId, err)
+		progUpdate.Err = err
+		ch <- progUpdate
 		return nil, err
 	}
 	if res.StatusCode != http.StatusOK {
+		log.Println("track upload failed with HTTP %d", res.StatusCode)
+		progUpdate.Err = err
+		ch <- progUpdate
 		return nil, fmt.Errorf("track upload failed with HTTP %d", res.StatusCode)
 	}
+	log.Printf("track upload %d success", uploadId)
 	msg := &PlaylistAddUpload{
 		ID: id,
 		UploadID: uploadId,
@@ -265,30 +354,54 @@ func (c *Client) UploadToPlaylist(id string, track TrackUpload) (*Track, error) 
 	}
 	a, err := c.AddAwaiter()
 	if err != nil {
+		progUpdate.Err = err
+		ch <- progUpdate
 		return nil, err
 	}
 	defer a.Close()
+	log.Printf("send mqtt message: %#v", msg)
 	err = c.publish("/j/web/input/PLAYLIST_ADD_UPLOAD", msg)
 	if err != nil {
+		progUpdate.Err = err
+		ch <- progUpdate
 		return nil, err
 	}
 	timer := time.NewTimer(time.Minute)
 	for {
+		log.Println("looking for new track id")
 		update, ok := a.Read(timer)
 		if !ok {
+			log.Println("read failed, can't find newly uploaded track")
 			return nil, errors.New("can't find newly uploaded track")
 		}
 		if update.After.Library == nil || update.After.Library.Tracks == nil {
 			continue
 		}
+		v, ok := update.After.Library.Tracks[md5]
+		if ok {
+			v.ID = &md5
+			log.Printf("found uploaded track %s = %s", md5, v)
+			progUpdate.Track = v
+			ch <- progUpdate
+			return v, nil
+		}
 		for k, v := range update.After.Library.Tracks {
 			if _, ok := prevTracks[k]; !ok {
 				if v.Size != nil && int64(*v.Size) == size {
+					v.ID = &k
+					log.Printf("found uploaded track %s = %s", k, v)
+					progUpdate.Track = v
+					ch <- progUpdate
 					return v, nil
+				} else if v.Size != nil {
+					log.Printf("new track %s has wrong size (%d != %d): %s", k, *v.Size, size, v)
+				} else {
+					log.Printf("new track %s missing size: %s", k, v)
 				}
 			}
 		}
 	}
+	log.Println("failed to find newly uploaded track")
 	return nil, errors.New("can't find newly uploaded track")
 }
 
@@ -413,6 +526,19 @@ func (c *Client) SetRepeatMode(mode RepeatMode) (*Audio, error) {
 		return nil, err
 	}
 	return state.Audio, nil
+}
+
+func (c *Client) SetPlayMode(mode int) (*Audio, error) {
+	shuffleOn := (mode & PlayModeShuffle) != 0
+	repeatMode := RepeatModeOff
+	if (mode & PlayModeRepeat) != 0 {
+		repeatMode = RepeatModeOnce
+	}
+	_, err := c.SetShuffleMode(shuffleOn)
+	if err != nil {
+		return nil, err
+	}
+	return c.SetRepeatMode(repeatMode)
 }
 
 func (c *Client) SkipNext() (*Audio, error) {

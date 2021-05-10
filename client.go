@@ -74,7 +74,7 @@ func Discover() (*Client, error) {
 	for _, device := range devices {
 		u = &url.URL{
 			Scheme: "http",
-			Host: devices[0].Hostname,
+			Host: devices[0].IP,
 			Path: "/ping",
 			RawQuery: strconv.FormatFloat(rand.Float64(), 'f', -1, 64),
 		}
@@ -108,6 +108,7 @@ type StateUpdate struct {
 
 type Client struct {
 	conn mqtt.Client
+	hc *http.Client
 	device *DiscoveryInfo
 	dpi *DiscoveryPingInfo
 	lastError error
@@ -120,13 +121,16 @@ type Client struct {
 func NewClient(device *DiscoveryInfo, dpi *DiscoveryPingInfo) (*Client, error) {
 	u := &url.URL{
 		Scheme: "ws",
-		Host: device.Hostname + ":8000",
+		Host: device.IP + ":8000",
 		Path: "/mqtt",
 	}
 	t := time.Now()
 	ms := t.Unix() * 1000 + int64(t.Nanosecond() / 1e6)
 	client := &Client{
 		conn: nil,
+		hc: &http.Client{
+			Transport: http.DefaultTransport,
+		},
 		device: device,
 		dpi: dpi,
 		lastError: nil,

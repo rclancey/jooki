@@ -96,6 +96,8 @@ func (rm *RepeatMode) UnmarshalJSON(data []byte) error {
 }
 
 const (
+	PlayModeShuffle = 1
+	PlayModeRepeat = 2
 	RepeatModeOff = RepeatMode(0)
 	RepeatModeOn = RepeatMode(1)
 	RepeatModeOnce = RepeatMode(2)
