@@ -3,7 +3,6 @@ package jooki
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"math"
 	"strconv"
 	"strings"
@@ -80,19 +79,21 @@ func (fs FloatStr) MarshalJSON() ([]byte, error) {
 }
 
 func (fs *FloatStr) UnmarshalJSON(data []byte) error {
-	log.Println("unmarshal floatstr", string(data))
 	var s string
 	err := json.Unmarshal(data, &s)
 	if err != nil {
-		log.Println("error unmarshalling to string:", err)
-		return err
+		var f float64
+		xerr := json.Unmarshal(data, &f)
+		if xerr != nil {
+			return err
+		}
+		*fs = FloatStr(f)
+		return nil
 	}
 	f, err := strconv.ParseFloat(s, 64)
 	if err != nil {
-		log.Println("error in parse float:", err)
 		return err
 	}
-	log.Println("parsed floatstr as", f)
 	*fs = FloatStr(f)
 	return nil
 }
@@ -107,7 +108,13 @@ func (is *IntStr) UnmarshalJSON(data []byte) error {
 	var s string
 	err := json.Unmarshal(data, &s)
 	if err != nil {
-		return err
+		var i int64
+		xerr := json.Unmarshal(data, &i)
+		if xerr != nil {
+			return err
+		}
+		*is = IntStr(i)
+		return nil
 	}
 	i, err := strconv.ParseInt(s, 10, 64)
 	if err != nil {
