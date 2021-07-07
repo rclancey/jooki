@@ -82,7 +82,13 @@ func (fs *FloatStr) UnmarshalJSON(data []byte) error {
 	var s string
 	err := json.Unmarshal(data, &s)
 	if err != nil {
-		return err
+		var f float64
+		xerr := json.Unmarshal(data, &f)
+		if xerr != nil {
+			return err
+		}
+		*fs = FloatStr(f)
+		return nil
 	}
 	f, err := strconv.ParseFloat(s, 64)
 	if err != nil {
@@ -102,7 +108,13 @@ func (is *IntStr) UnmarshalJSON(data []byte) error {
 	var s string
 	err := json.Unmarshal(data, &s)
 	if err != nil {
-		return err
+		var i int64
+		xerr := json.Unmarshal(data, &i)
+		if xerr != nil {
+			return err
+		}
+		*is = IntStr(i)
+		return nil
 	}
 	i, err := strconv.ParseInt(s, 10, 64)
 	if err != nil {
@@ -148,7 +160,7 @@ func (t *Track) String() string {
 	if t.Format != nil {
 		parts = append(parts, fmt.Sprintf(`Format:"%s"`, *t.Format))
 	}
-	parts = append(parts, fmt.Sprintf(`HasImage:"%s"`, t.HasImage))
+	parts = append(parts, fmt.Sprintf(`HasImage:"%t"`, t.HasImage))
 	if t.Size != nil {
 		parts = append(parts, fmt.Sprintf(`Size:"%d"`, *t.Size))
 	}

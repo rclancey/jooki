@@ -341,7 +341,7 @@ func (c *Client) UploadToPlaylist(id string, track TrackUpload, ch chan Progress
 		return nil, err
 	}
 	if res.StatusCode != http.StatusOK {
-		log.Println("track upload failed with HTTP %d", res.StatusCode)
+		log.Printf("track upload failed with HTTP %d", res.StatusCode)
 		progUpdate.Err = err
 		ch <- progUpdate
 		return nil, fmt.Errorf("track upload failed with HTTP %d", res.StatusCode)
