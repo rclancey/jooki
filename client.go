@@ -382,6 +382,7 @@ func (c *Client) onStateMessage(m mqtt.Message) {
 	defer c.awaitLocker.RUnlock()
 	c.stateLocker.Lock()
 	before := c.lastState.Clone()
+	log.Println("mqtt payload:", string(m.Payload()))
 	err := json.Unmarshal(m.Payload(), c.lastState)
 	if err != nil {
 		log.Println("error parsing jooki state:", err)

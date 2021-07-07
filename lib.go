@@ -148,7 +148,7 @@ func (t *Track) String() string {
 	if t.Format != nil {
 		parts = append(parts, fmt.Sprintf(`Format:"%s"`, *t.Format))
 	}
-	parts = append(parts, fmt.Sprintf(`HasImage:"%s"`, t.HasImage))
+	parts = append(parts, fmt.Sprintf(`HasImage:"%t"`, t.HasImage))
 	if t.Size != nil {
 		parts = append(parts, fmt.Sprintf(`Size:"%d"`, *t.Size))
 	}
