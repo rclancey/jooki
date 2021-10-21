@@ -51,7 +51,7 @@ func Discover() (*Client, error) {
 		Path: "/api/discover/v2/local_jooki",
 		RawQuery: strconv.FormatFloat(rand.Float64(), 'f', -1, 64),
 	}
-	log.Println("looking for jooki")
+	//log.Println("looking for jooki")
 	res, err := c.Get(u.String())
 	if err != nil {
 		return nil, err
@@ -79,20 +79,20 @@ func Discover() (*Client, error) {
 			Path: "/ping",
 			RawQuery: strconv.FormatFloat(rand.Float64(), 'f', -1, 64),
 		}
-		log.Println("ping jooki", device.IP)
+		//log.Println("ping jooki", device.IP)
 		res, err = c.Get(u.String())
 		if err != nil {
-			log.Println("can't ping jooki", device.IP, err)
+			//log.Println("can't ping jooki", device.IP, err)
 			continue
 		}
 		if res.StatusCode != http.StatusOK {
-			log.Println("bad ping jooki", device.IP, res.StatusCode)
+			//log.Println("bad ping jooki", device.IP, res.StatusCode)
 			continue
 		}
 		body, err = ioutil.ReadAll(res.Body)
 		res.Body.Close()
 		if err != nil {
-			log.Println("bad jooki ping body", device.IP, err)
+			//log.Println("bad jooki ping body", device.IP, err)
 			continue
 		}
 		dpi := DiscoveryPingInfo{}
@@ -102,7 +102,7 @@ func Discover() (*Client, error) {
 			log.Println("bad jooki json:", string(body))
 			continue
 		}
-		log.Println("good jooki", device.IP)
+		//log.Println("good jooki", device.IP)
 		return NewClient(device, &dpi)
 	}
 	return nil, errors.New("no jooki devices online")
@@ -393,7 +393,7 @@ func (c *Client) onStateMessage(m mqtt.Message) {
 	err := json.Unmarshal(m.Payload(), c.lastState)
 	if err != nil {
 		log.Println("error parsing jooki state:", err)
-		log.Println("bad json:", string(m.Payload()))
+		//log.Println("bad json:", string(m.Payload()))
 	}
 	after := c.lastState.Clone()
 	c.stateLocker.Unlock()
