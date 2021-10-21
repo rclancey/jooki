@@ -184,6 +184,41 @@ type Library struct {
 	Tracks map[string]*Track `json:"tracks"`
 }
 
+func (l *Library) UnmarshalJSON(data []byte) error {
+	type rawLib struct {
+		Playlists json.RawMessage `json:"playlists"`
+		Tokens json.RawMessage `json:"tokens"`
+		Tracks json.RawMessage `json:"tracks"`
+	}
+	raw := &rawLib{}
+	err := json.Unmarshal(data, raw)
+	if err != nil {
+		return err
+	}
+	l.Playlists = map[string]*Playlist{}
+	l.Tokens = map[string]*Token{}
+	l.Tracks = map[string]*Track{}
+	if len(raw.Playlists) > 0 && string(raw.Playlists) != "null" && string(raw.Playlists) != "[]" {
+		err = json.Unmarshal([]byte(raw.Playlists), &l.Playlists)
+		if err != nil {
+			return err
+		}
+	}
+	if len(raw.Tokens) > 0 && string(raw.Tokens) != "null" && string(raw.Tokens) != "[]" {
+		err = json.Unmarshal([]byte(raw.Tokens), &l.Tokens)
+		if err != nil {
+			return err
+		}
+	}
+	if len(raw.Tracks) > 0 && string(raw.Tracks) != "null" && string(raw.Tracks) != "[]" {
+		err = json.Unmarshal([]byte(raw.Tracks), &l.Tracks)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (l *Library) Clone() *Library {
 	if l == nil {
 		return nil
