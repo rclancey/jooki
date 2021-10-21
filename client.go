@@ -51,6 +51,7 @@ func Discover() (*Client, error) {
 		Path: "/api/discover/v2/local_jooki",
 		RawQuery: strconv.FormatFloat(rand.Float64(), 'f', -1, 64),
 	}
+	log.Println("looking for jooki")
 	res, err := c.Get(u.String())
 	if err != nil {
 		return nil, err
@@ -74,27 +75,34 @@ func Discover() (*Client, error) {
 	for _, device := range devices {
 		u = &url.URL{
 			Scheme: "http",
-			Host: devices[0].IP,
+			Host: device.IP,
 			Path: "/ping",
 			RawQuery: strconv.FormatFloat(rand.Float64(), 'f', -1, 64),
 		}
+		log.Println("ping jooki", device.IP)
 		res, err = c.Get(u.String())
 		if err != nil {
+			log.Println("can't ping jooki", device.IP, err)
 			continue
 		}
 		if res.StatusCode != http.StatusOK {
+			log.Println("bad ping jooki", device.IP, res.StatusCode)
 			continue
 		}
 		body, err = ioutil.ReadAll(res.Body)
 		res.Body.Close()
 		if err != nil {
+			log.Println("bad jooki ping body", device.IP, err)
 			continue
 		}
 		dpi := DiscoveryPingInfo{}
 		err = json.Unmarshal(body, &dpi)
 		if err != nil {
+			log.Println("bad jooki unmarshal", device.IP, err)
+			log.Println("bad jooki json:", string(body))
 			continue
 		}
+		log.Println("good jooki", device.IP)
 		return NewClient(device, &dpi)
 	}
 	return nil, errors.New("no jooki devices online")
