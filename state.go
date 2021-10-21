@@ -192,6 +192,35 @@ type Audio struct {
 	Playback *Playback `json:"playback"`
 }
 
+func (a *Audio) UnmarshalJSON(data []byte) error {
+	type rawAudio struct {
+		Config *AudioConfig `json:"config"`
+		NowPlaying json.RawMessage `json:"nowPlaying"`
+		Playback json.RawMessage `json:"playback"`
+	}
+	raw := &rawAudio{}
+	err := json.Unmarshal(data, raw)
+	if err != nil {
+		return err
+	}
+	a.Config = raw.Config
+	if len(raw.NowPlaying) > 0 && string(raw.NowPlaying) != "null" && string(raw.NowPlaying) != "[]" {
+		a.NowPlaying = &NowPlaying{}
+		err = json.Unmarshal([]byte(raw.NowPlaying), a.NowPlaying)
+		if err != nil {
+			return err
+		}
+	}
+	if len(raw.Playback) > 0 && string(raw.Playback) != "null" && string(raw.Playback) != "[]" {
+		a.Playback = &Playback{}
+		err = json.Unmarshal([]byte(raw.Playback), a.Playback)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (a *Audio) Clone() *Audio {
 	if a == nil {
 		return nil
